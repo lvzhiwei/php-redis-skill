@@ -3,7 +3,10 @@ namespace Lzw012\PhpRedisSkill;
 
 trait RedisTrait {
     private $redis;
-    /*public function getRedis()
+    private $host = '127.0.0.1';
+    private $port = 6379;
+    private $timeout = 10;
+    public function getRedis()
     {
         if (is_null($this->redis))
         {
@@ -11,7 +14,7 @@ trait RedisTrait {
             $this->redis->connect('127.0.0.1',6379,10);
         }
         return $this->redis;
-    }*/
+    }
 
     /**
      * 设置redis 对象, 如果未设置, 则使用默认配置
@@ -20,6 +23,12 @@ trait RedisTrait {
     {
         $redis = new \Redis();
         $redis->connect($host,$port,$timeout);
+        $this->redis = $redis;
+        return $this;
+    }
+
+    public function replaceRedis($redis)
+    {
         $this->redis = $redis;
         return $this;
     }

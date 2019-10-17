@@ -26,38 +26,59 @@ class RedisRankList
      * @param int $deadline 排行榜截止时间
      * @return $this
      */
-    public function setConfig(string $key='hotgoods', int $number=10, int $timeout=0,int $rank_type=self::RANK_TYPE_HOT, int $deadline=0)
+    public function setConfig(string $key='hotgoods', int $number=10, int $keytimeout=-1,int $rank_type=self::RANK_TYPE_HOT, int $deadline=0)
     {
         $this->key = $key;
         $this->number = $number;
-        $this->timeout = $timeout;
+        $this->timeout = $keytimeout;
         $this->rank_type = $rank_type;
         $this->deadline = $deadline;
         return $this;
     }
 
-    public function setItem($item, $score)
+    /**
+     * set a member to the redis key, if the element is exists, update the element
+     * 给 redis 有序集合增加或修改一个元素
+     * @param $item
+     * @param $score
+     * @return $this
+     * @throws $e exception
+     */
+    public function setMmeber($member, $score)
     {
-        // 注意: redis开启multi后无法进行查询, 不能在事务中写查询逻辑, 很坑
-        $card = $this->redis->zCard('activeUser');
-        $last = $this->redis->zRevRange('activeUser',-1,-1)[0];
-        $lastScore = $this->redis->zScore('activeUser', $last);
-        $this->redis->multi();
-        $this->redis->watch('activeUser');
-        if($card <3)
-        {
-            // 增加新用户
-            $this->redis->zAdd('activeUser',array(), $score, $item);
-        } else
-        {
-            // 如果最后一名的值比当前新值小,则写入
-            if ($lastScore < $score)
+        $this->redis = $this->getRedis();
+        $key = $this->key;
+        $score = $this->getScore($score); // 根据排行榜的类型, 设置不同的 score
+        try {
+            // 注意: redis开启multi后无法进行查询, 不能在事务中写查询逻辑, 很坑, 这里没有使用事务
+            $zsetLength = $this->redis->zCard($key);
+            if($zsetLength < $this->number)
             {
-                $this->redis->zRem('activeUser', $last);
-                $this->redis->zAdd('activeUser',array(),$score,$item);
+                // 增加新用户
+                $this->redis->zAdd($key,array(), $score, $member);
+            } else
+            {
+                $last_element = $this->redis->zRevRange($key,-1,-1)[0];
+                $last_score = $this->redis->zScore($key, $last_element);
+//                $this->redis->multi();
+//                $this->redis->watch($key);
+                // 如果最后一名的值比当前新值小,则写入
+                if ($last_score < $score)
+                {
+                    $this->redis->zRem($key, $last_element); // remove the last member
+                    $this->redis->zAdd($key,array(),$score,$member);
+                }
             }
+        } catch (\Exception $e) {
+            throw $e;
         }
+
         return $this;
+    }
+
+    public function replaceElement($item,$score)
+    {
+
     }
 
 
@@ -68,8 +89,8 @@ class RedisRankList
      */
     protected function incrScore($item, int $score, $options)
     {
-        $this->redis = $this->setRedis();
-        $this->redis->zAdd();
+//        $this->redis = $this->setRedis();
+//        $this->redis->zAdd();
     }
 
     protected function getScore($score)
@@ -90,12 +111,15 @@ class RedisRankList
     /**
      * 获取排行榜数据
      * @param $key
+     * @return array $return
      * todo 使用 sort 命令查找关联的排行信息 参考网址: https://blog.csdn.net/w13528476101/article/details/70146064
      * 使用多个键进行查询
      */
-    public function getRankList($key)
+    public function getRankList()
     {
-
+        $rankList = $this->redis->zRevRange($this->key,0,-1,true); //带 value=>score 的数组，通过索引，分数从高到低;
+        $rankList = (array)$rankList;
+        return $rankList;
     }
 
     public function __destruct()
